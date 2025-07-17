@@ -1,0 +1,13 @@
+{
+  "name": "stock-heatmap-pro",
+  "version": "1.0.0",
+  "description": "A professional stock heatmap application.",
+  "main": "index.html",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "private": true,
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}
