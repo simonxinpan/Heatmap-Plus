@@ -11,8 +11,22 @@
     <link rel="icon" type="image/png" href="favicon.png">
 </head>
 <body>
-    <div id="app-container"></div>
+
+    <!-- 主应用容器 -->
+    <div id="app-container">
+        <!-- 内容将由 script.js 动态填充 -->
+    </div>
+    
+    <!-- 提示框元素 -->
     <div id="tooltip" class="tooltip"></div>
+
+    <!-- 
+      重要：将脚本放在 body 的末尾
+      1. d3.js 是必需的库，用于绘制图表
+      2. script.js 是你自己的逻辑，它依赖 d3 并且需要操作上面的 HTML 元素
+    -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="script.js"></script>
+
 </body>
 </html>

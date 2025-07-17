@@ -2,9 +2,15 @@ document.addEventListener('DOMContentLoaded', router);
 window.addEventListener('hashchange', router);
 
 function router() {
+    // 使用 'app-container' 作为主内容区域
+    const mainContent = document.getElementById('app-container');
+    if (!mainContent) {
+        console.error("致命错误: 无法在 HTML 中找到 id='app-container' 的元素。");
+        return;
+    }
+    mainContent.innerHTML = ''; // 清空之前的内容
+
     const path = window.location.hash.substring(1) || '/';
-    const mainContent = document.getElementById('main-content');
-    mainContent.innerHTML = '';
 
     if (path === '/') {
         renderHomePage();
@@ -18,7 +24,7 @@ function router() {
 
 async function renderHomePage() {
     console.log("开始渲染主页...");
-    const mainContent = document.getElementById('main-content');
+    const mainContent = document.getElementById('app-container');
     mainContent.innerHTML = '<div id="heatmap-container"></div><div id="loading">加载数据中...</div>';
     
     const loadingDiv = document.getElementById('loading');
@@ -30,7 +36,6 @@ async function renderHomePage() {
         console.log("步骤 2: API 响应已收到，状态码:", response.status);
 
         if (!response.ok) {
-            // 如果HTTP状态码不是2xx，则抛出错误
             throw new Error(`获取市场数据失败，服务器返回状态: ${response.status}`);
         }
 
@@ -38,17 +43,14 @@ async function renderHomePage() {
         const data = await response.json();
         console.log("步骤 4: 已成功解析 JSON，这是从 API 获取的原始数据:", data);
 
-        // 这是最关键的一步：从返回的对象中提取 stocks 数组
         const stocks = data.stocks;
 
-        // 健壮性检查：确保 stocks 是一个数组
         if (!stocks || !Array.isArray(stocks)) {
             throw new Error('API 返回的数据格式不正确，缺少 "stocks" 数组。');
         }
         
         console.log(`步骤 5: 成功提取到 ${stocks.length} 条股票数据，准备渲染热力图。`);
 
-        // 数据预处理
         const processedStocks = stocks.map(stock => ({
             name: stock.ticker,
             value: parseFloat(stock.market_cap),
@@ -61,18 +63,12 @@ async function renderHomePage() {
         const sectors = {};
         processedStocks.forEach(stock => {
             if (!sectors[stock.sector]) {
-                sectors[stock.sector] = {
-                    name: stock.sector,
-                    children: []
-                };
+                sectors[stock.sector] = { name: stock.sector, children: [] };
             }
             sectors[stock.sector].children.push(stock);
         });
 
-        const treemapData = {
-            name: 'S&P 500',
-            children: Object.values(sectors)
-        };
+        const treemapData = { name: 'S&P 500', children: Object.values(sectors) };
 
         loadingDiv.style.display = 'none';
         renderTreemap(treemapData);
@@ -81,7 +77,6 @@ async function renderHomePage() {
         console.error('主页渲染过程中发生严重错误:', error);
         loadingDiv.innerText = `加载失败: ${error.message}。正在显示模拟数据。`;
         
-        // 只有在捕获到严重错误时，才使用模拟数据
         const stocks = generateMockData(500);
         const sectors = {};
         stocks.forEach(stock => {
@@ -97,15 +92,16 @@ async function renderHomePage() {
 
 function renderTreemap(data) {
     const container = document.getElementById('heatmap-container');
-    container.innerHTML = ''; // 清空旧内容
+    if (!container) return; // 如果容器不存在则退出
+    container.innerHTML = '';
 
     const width = container.clientWidth;
-    const height = container.clientHeight || window.innerHeight * 0.8;
+    const height = container.clientHeight || window.innerHeight * 0.9;
 
-    const treemap = d3.treemap().size([width, height]).padding(1).round(true);
+    const treemap = d3.treemap().size([width, height]).padding(2).round(true);
 
     const root = d3.hierarchy(data)
-        .sum(d => d.value)
+        .sum(d => d.value > 0 ? d.value : 0) // 确保市值大于0
         .sort((a, b) => b.height - a.height || b.value - a.value);
 
     treemap(root);
@@ -117,7 +113,7 @@ function renderTreemap(data) {
 
     const svg = d3.select(container).append('svg')
         .attr('viewBox', `0 0 ${width} ${height}`)
-        .style('font', '10px sans-serif');
+        .style('font', '12px sans-serif');
 
     const leaf = svg.selectAll('g')
         .data(root.leaves())
@@ -125,7 +121,7 @@ function renderTreemap(data) {
         .attr('transform', d => `translate(${d.x0},${d.y0})`);
 
     leaf.append('title')
-        .text(d => `${d.data.name_zh} (${d.data.name})\n市值: ${d.data.value.toFixed(2)}M\n涨跌幅: ${d.data.change.toFixed(2)}%`);
+        .text(d => `${d.data.name_zh} (${d.data.name})\n市值: ${(d.data.value / 1e6).toFixed(2)}B\n涨跌幅: ${d.data.change.toFixed(2)}%`);
 
     leaf.append('rect')
         .attr('id', d => `leaf-${d.data.name}`)
@@ -140,18 +136,21 @@ function renderTreemap(data) {
         .attr('height', d => d.y1 - d.y0);
 
     const text = leaf.append('text')
-        .attr('clip-path', d => `url(#clip-${d.data.name})`);
-
-    text.selectAll('tspan')
-        .data(d => [d.data.name, `${d.data.change.toFixed(2)}%`])
+        .attr('clip-path', d => `url(#clip-${d.data.name})`)
+        .selectAll('tspan')
+        .data(d => {
+            const area = (d.x1 - d.x0) * (d.y1 - d.y0);
+            if (area < 500) return []; // 如果面积太小，则不显示文字
+            return [d.data.name, `${d.data.change.toFixed(2)}%`];
+        })
         .join('tspan')
-        .attr('x', 4)
-        .attr('y', (d, i) => 13 + i * 10)
+        .attr('x', 5)
+        .attr('y', (d, i) => 15 + i * 12)
         .attr('fill', 'white')
         .attr('fill-opacity', 0.9)
+        .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.7)')
         .text(d => d);
 }
-
 
 function generateMockData(count) {
     console.warn("警告: 正在生成并使用模拟数据！");
@@ -170,9 +169,7 @@ function generateMockData(count) {
     return stocks;
 }
 
-
 function renderStockDetailPage(ticker) {
-    // 股票详情页逻辑，暂时未实现
-    const mainContent = document.getElementById('main-content');
+    const mainContent = document.getElementById('app-container');
     mainContent.innerHTML = `<h1>股票详情: ${ticker}</h1><p>此页面功能正在开发中...</p>`;
 }
