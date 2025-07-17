@@ -39,44 +39,62 @@ async function renderHomePage() {
         }
 
         console.log("步骤 3: 正在将响应解析为 JSON...");
-        const stocks = await response.json(); // 直接将解析后的数组赋值给 stocks
+        const stocks = await response.json();
         console.log("步骤 4: 已成功解析 JSON，获取到股票数据:", stocks);
 
-        // 【最终修正】: 直接检查 stocks 是否为数组
         if (!Array.isArray(stocks)) {
             throw new Error('API 返回的数据不是一个有效的数组。');
         }
         
-        console.log(`步骤 5: 成功验证 ${stocks.length} 条股票数据，准备渲染热力图。`);
+        console.log(`步骤 5: 成功验证 ${stocks.length} 条股票数据。`);
+        
+        console.log("步骤 6: 正在处理和转换股票数据（增加对无效数据的防御）...");
+        // 【关键修复】进行防御性数据处理，确保 value 和 change 始终是有效数字
+        const processedStocks = stocks.map(stock => {
+            const marketCap = parseFloat(stock.market_cap);
+            const changePercent = parseFloat(stock.change_percent);
 
-        // 后续代码完全不变，直接使用 stocks 变量
-        const processedStocks = stocks.map(stock => ({
-            name: stock.ticker,
-            value: parseFloat(stock.market_cap),
-            change: parseFloat(stock.change_percent),
-            sector: stock.sector_zh,
-            logo: stock.logo,
-            name_zh: stock.name_zh
-        }));
+            return {
+                name: stock.ticker,
+                value: isNaN(marketCap) ? 0 : marketCap, // 如果市值无效，则设为0
+                change: isNaN(changePercent) ? 0 : changePercent, // 如果涨跌幅无效，则设为0
+                sector: stock.sector_zh || '未知板块', // 如果板块为空，则设为'未知板块'
+                logo: stock.logo,
+                name_zh: stock.name_zh
+            };
+        });
 
+        console.log("步骤 7: 正在按板块组织数据...");
         const sectors = {};
         processedStocks.forEach(stock => {
             if (!sectors[stock.sector]) {
                 sectors[stock.sector] = { name: stock.sector, children: [] };
             }
-            sectors[stock.sector].children.push(stock);
+            // 只有市值大于0的股票才被添加到图表中
+            if (stock.value > 0) {
+                sectors[stock.sector].children.push(stock);
+            }
         });
 
         const treemapData = { name: 'S&P 500', children: Object.values(sectors) };
+        console.log("步骤 8: Treemap 数据结构已准备好，准备调用渲染函数。", treemapData);
 
         loadingDiv.style.display = 'none';
-        renderTreemap(treemapData);
+        
+        // 增加对 renderTreemap 的独立错误捕获
+        try {
+            renderTreemap(treemapData);
+            console.log("步骤 10: [成功] 热力图渲染函数执行完毕。");
+        } catch (renderError) {
+            console.error("步骤 9.1: [致命] renderTreemap 函数内部发生错误!", renderError);
+            throw renderError; // 将错误重新抛出，以便外层 catch 捕获并显示模拟数据
+        }
 
     } catch (error) {
         console.error('主页渲染过程中发生严重错误:', error);
         loadingDiv.innerText = `加载失败: ${error.message}。正在显示模拟数据。`;
         
-        const mockStocks = generateMockData(500); // 变量名区分
+        const mockStocks = generateMockData(500);
         const sectors = {};
         mockStocks.forEach(stock => {
             if (!sectors[stock.sector]) {
@@ -90,8 +108,12 @@ async function renderHomePage() {
 }
 
 function renderTreemap(data) {
+    console.log("步骤 9: 已进入 renderTreemap 函数。");
     const container = document.getElementById('heatmap-container');
-    if (!container) return;
+    if (!container) {
+        console.error("renderTreemap 错误: 找不到 id='heatmap-container' 的元素。");
+        return;
+    }
     container.innerHTML = '';
 
     const width = container.clientWidth;
@@ -100,7 +122,7 @@ function renderTreemap(data) {
     const treemap = d3.treemap().size([width, height]).padding(2).round(true);
 
     const root = d3.hierarchy(data)
-        .sum(d => d.value > 0 ? d.value : 0)
+        .sum(d => d.value) // 在数据处理阶段已确保 d.value 是有效数字
         .sort((a, b) => b.height - a.height || b.value - a.value);
 
     treemap(root);
@@ -127,7 +149,7 @@ function renderTreemap(data) {
         .attr('fill', d => color(d.data.change))
         .attr('width', d => d.x1 - d.x0)
         .attr('height', d => d.y1 - d.y0);
-
+    
     leaf.append('clipPath')
         .attr('id', d => `clip-${d.data.name}`)
         .append('rect')
@@ -150,6 +172,7 @@ function renderTreemap(data) {
         .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.7)')
         .text(d => d);
 }
+
 
 function generateMockData(count) {
     console.warn("警告: 正在生成并使用模拟数据！");
