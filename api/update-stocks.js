@@ -1,10 +1,8 @@
-// /api/update-stocks.js (最终修正版)
+// /api/update-stocks.js (最终的、最稳健的版本)
 
 import { Pool } from 'pg';
 
 const UPDATE_BATCH_SIZE = 50; 
-const FINNHUB_CONCURRENT_REQUESTS = 10;
-const DELAY_BETWEEN_BATCHES = 1000;
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -16,13 +14,14 @@ export default async function handler(request, response) {
     const { secret } = request.query;
     if (secret !== process.env.UPDATE_SECRET_KEY) return response.status(401).json({ message: 'Unauthorized' });
     
-    console.log('--- [PG] Starting CORRECTED Stock Update ---');
+    console.log('--- [PG] Starting ROBUST Stock Update (Serial Mode) ---');
     try {
         const stocksToProcess = await getStocksToUpdate();
         if (stocksToProcess.length === 0) {
             return response.status(200).json({ success: true, updated: 0, message: 'All stocks are up-to-date.' });
         }
-        const fetchedStockData = await fetchBatchData(stocksToProcess);
+        // 使用新的、稳健的串行获取函数
+        const fetchedStockData = await fetchBatchDataSerially(stocksToProcess);
         if (fetchedStockData.length > 0) {
             await upsertBatchData(fetchedStockData);
         }
@@ -33,9 +32,10 @@ export default async function handler(request, response) {
     }
 }
 
-// === 逻辑修正：直接从 stock_list 找新股，或从 stocks 找旧股 ===
+
+// ==================== 辅助函数 ======================
+
 async function getStocksToUpdate() {
-    // 1. 优先查找在 stock_list 中但不在 stocks 中的新股票
     const { rows: newStocks } = await pool.query(`
         SELECT ticker, name_zh, sector_zh 
         FROM stock_list
@@ -44,11 +44,9 @@ async function getStocksToUpdate() {
     `);
     if (newStocks.length > 0) {
         console.log(`Found ${newStocks.length} NEW stocks to insert.`);
-        return newStocks; // 返回包含 ticker, name_zh, sector_zh 的对象数组
+        return newStocks;
     }
-
-    // 2. 如果没有新股票，则更新最久未更新的旧股票
-    console.log('No new stocks found. Updating oldest entries in `stocks` table.');
+    console.log('No new stocks found. Updating oldest entries in "stocks" table.');
     const { rows: stocksToUpdate } = await pool.query(`
         SELECT ticker, name_zh, sector_zh 
         FROM stocks
@@ -59,52 +57,64 @@ async function getStocksToUpdate() {
     return stocksToUpdate;
 }
 
+// === 这是被重写为串行模式的核心函数 ===
+async function fetchBatchDataSerially(stockInfos) {
+    const allSuccessfulData = [];
+    console.log(`Starting to fetch data for ${stockInfos.length} stocks SERIALLY to guarantee success.`);
 
-// === fetchBatchData 和 fetchApiDataForTicker 保持不变，但很重要，我们保留它们 ===
-async function fetchBatchData(stockInfos) {
-    let allSuccessfulData = [];
-    for (let i = 0; i < stockInfos.length; i += FINNHUB_CONCURRENT_REQUESTS) {
-        const batch = stockInfos.slice(i, i + FINNHUB_CONCURRENT_REQUESTS);
-        const promises = batch.map(info => fetchApiDataForTicker(info));
-        const results = await Promise.allSettled(promises);
-        allSuccessfulData = allSuccessfulData.concat(results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value));
-        if (i + FINNHUB_CONCURRENT_REQUESTS < stockInfos.length) {
-            await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+    for (const info of stockInfos) {
+        try {
+            // 一次只处理一个股票，等待它完成后再进行下一个
+            const stockData = await fetchApiDataForTicker(info);
+            if (stockData) {
+                allSuccessfulData.push(stockData);
+                console.log(`[SUCCESS] Fetched data for ${info.ticker}`);
+            }
+            // 在每个股票处理后加入一个微小的延迟，更加保险
+            await new Promise(resolve => setTimeout(resolve, 200)); // 200毫秒延迟
+        } catch (error) {
+            console.error(`[FAILURE] Could not process ${info.ticker}: ${error.message}`);
         }
     }
-    console.log(`Successfully fetched data for ${allSuccessfulData.length} of ${stockInfos.length} stocks.`);
+    
+    console.log(`Finished serial fetching. Successfully got data for ${allSuccessfulData.length} of ${stockInfos.length} stocks.`);
     return allSuccessfulData;
 }
 
+
 async function fetchApiDataForTicker(stockInfo) {
     const { ticker, name_zh, sector_zh } = stockInfo;
-    try {
-        const apiKey = process.env.FINNHUB_API_KEY;
-        const fetchFromFinnhub = async (endpoint) => {
-            const url = `https://finnhub.io/api/v1${endpoint}&token=${apiKey}`;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`Finnhub API error for ${ticker}: ${res.statusText}`);
-            return res.json();
-        };
-        const [profile, quote] = await Promise.all([
-            fetchFromFinnhub(`/stock/profile2?symbol=${ticker}`),
-            fetchFromFinnhub(`/quote?symbol=${ticker}`)
-        ]);
-        if (!quote || typeof quote.c === 'undefined' || !profile) return null;
-        return {
-            ticker, name_zh, sector_zh, 
-            market_cap: parseFloat(profile.marketCapitalization) || 0, 
-            change_percent: parseFloat(quote.dp) || 0,
-            logo: profile.logo || '',
-            last_updated: new Date().toISOString(),
-        };
-    } catch (error) {
-        console.error(`[PG] Error fetching data for ${ticker}:`, error.message);
+    const apiKey = process.env.FINNHUB_API_KEY;
+
+    const fetchFromFinnhub = async (endpoint) => {
+        const url = `https://finnhub.io/api/v1${endpoint}&token=${apiKey}`;
+        const res = await fetch(url);
+        // 如果请求不成功，直接抛出错误，由上层捕获
+        if (!res.ok) {
+            throw new Error(`Finnhub API error for ${ticker} on endpoint ${endpoint}: ${res.status} ${res.statusText}`);
+        }
+        return res.json();
+    };
+
+    // 分开 await，如果第一个失败，就不会再请求第二个
+    const profile = await fetchFromFinnhub(`/stock/profile2?symbol=${ticker}`);
+    const quote = await fetchFromFinnhub(`/quote?symbol=${ticker}`);
+
+    if (!quote || typeof quote.c === 'undefined' || !profile) {
+        console.warn(`[WARN] Invalid or incomplete API data for ${ticker}, skipping.`);
         return null;
     }
+    
+    return {
+        ticker, name_zh, sector_zh, 
+        market_cap: parseFloat(profile.marketCapitalization) || 0, 
+        change_percent: parseFloat(quote.dp) || 0,
+        logo: profile.logo || '',
+        last_updated: new Date().toISOString(),
+    };
 }
 
-// === upsertBatchData 保持不变 ===
+
 async function upsertBatchData(stockData) {
     const client = await pool.connect();
     try {
