@@ -1,33 +1,18 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S&P 500 Heatmap</title>
-    <!-- 引入 D3.js 库 -->
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <!-- 引入你的样式文件 -->
+    <title>股票热力图-Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="favicon.png">
 </head>
 <body>
-
-    <header class="header-container">
-        <!-- 1. 添加 heatmap-title 元素 -->
-        <h1 id="heatmap-title">S&P 500 Heatmap</h1>
-        <!-- 2. 添加 back-button 元素 -->
-        <button id="back-button" style="display:none;">Back to All Sectors</button>
-    </header>
-
-    <main>
-        <!-- 3. 添加用于渲染热力图的容器 -->
-        <div id="heatmap-container"></div>
-        
-        <!-- 4. 添加用于放置行业按钮的容器 -->
-        <div id="sector-buttons"></div>
-    </main>
-
-    <!-- 在 body 底部引入你的脚本文件，确保 HTML 元素已加载 -->
+    <div id="app-container"></div>
+    <div id="tooltip" class="tooltip"></div>
     <script src="script.js"></script>
-
 </body>
 </html>
