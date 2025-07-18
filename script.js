@@ -7,7 +7,7 @@ function router() {
         console.error("Fatal Error: Cannot find element with id='app-container' in HTML.");
         return;
     }
-    mainContent.innerHTML = ''; // Clear previous content
+    mainContent.innerHTML = ''; 
 
     const path = window.location.hash.substring(1) || '/';
 
@@ -24,7 +24,6 @@ function router() {
 async function renderHomePage() {
     console.log("Rendering Homepage...");
     const mainContent = document.getElementById('app-container');
-    // Set up the structure first
     mainContent.innerHTML = '<div id="heatmap-container"><div id="loading">Loading Real Market Data...</div></div>';
     
     try {
@@ -39,6 +38,8 @@ async function renderHomePage() {
         }
         console.log(`Successfully fetched ${stocks.length} stocks.`);
 
+        // --- 开始法医级诊断 ---
+        console.log("DIAGNOSTIC: Step A - Starting data processing (map)...");
         const processedStocks = stocks.map(stock => {
             const marketCap = parseFloat(stock.market_cap);
             const changePercent = parseFloat(stock.change_percent);
@@ -50,6 +51,7 @@ async function renderHomePage() {
                 name_zh: stock.name_zh
             };
         });
+        console.log("DIAGNOSTIC: Step B - Data processing (map) complete. Starting grouping (forEach)...");
 
         const sectors = {};
         processedStocks.forEach(stock => {
@@ -60,16 +62,18 @@ async function renderHomePage() {
                 sectors[stock.sector].children.push(stock);
             }
         });
+        console.log("DIAGNOSTIC: Step C - Grouping (forEach) complete. Finalizing data structure...");
 
         const treemapData = { name: 'S&P 500', children: Object.values(sectors) };
+        console.log("DIAGNOSTIC: Step D - Treemap data is ready. Calling rendering function via requestAnimationFrame...");
         
-        // Use requestAnimationFrame as a final guarantee to draw after the browser has painted the layout
         requestAnimationFrame(() => {
+            console.log("DIAGNOSTIC: Step E - Inside requestAnimationFrame. Calling renderTreemap NOW.");
             renderTreemap(treemapData);
         });
 
     } catch (error) {
-        console.error('Error during homepage rendering:', error);
+        console.error('CRITICAL ERROR during homepage rendering:', error);
         const loadingDiv = document.querySelector('#heatmap-container #loading');
         if(loadingDiv) loadingDiv.innerText = `Failed to load data: ${error.message}. Displaying mock data.`;
         
@@ -79,23 +83,27 @@ async function renderHomePage() {
 }
 
 function renderTreemap(data) {
+    console.log("DIAGNOSTIC: Step F - renderTreemap function has started.");
     const container = document.getElementById('heatmap-container');
-    if (!container) return;
+    if (!container) {
+        console.error("Render Error: Container not found.");
+        return;
+    }
 
-    // Remove loading message before drawing
     const loadingDiv = container.querySelector('#loading');
     if (loadingDiv) loadingDiv.remove();
     
-    container.innerHTML = ''; // Clear container for drawing
+    container.innerHTML = '';
 
     const width = container.clientWidth;
     const height = container.clientHeight;
 
     if (width === 0 || height === 0) {
-        console.error("Render Error: Container has zero width or height. Cannot draw chart.");
+        console.error("Render Error: Container has zero width or height.");
         container.innerHTML = '<p style="color: red;">Render Error: Container has no size.</p>';
         return;
     }
+    console.log(`DIAGNOSTIC: Step G - Container size is valid (${width}x${height}). Starting D3 operations...`);
 
     const treemap = d3.treemap().size([width, height]).padding(2).round(true);
     const root = d3.hierarchy(data).sum(d => d.value).sort((a, b) => b.value - a.value);
@@ -127,6 +135,8 @@ function renderTreemap(data) {
         .join('tspan')
         .attr('x', 5).attr('y', (d, i) => 15 + i * 12)
         .attr('fill', 'white').style('text-shadow', '1px 1px 2px rgba(0,0,0,0.7)').text(d => d);
+    
+    console.log("DIAGNOSTIC: Step H - renderTreemap function finished successfully.");
 }
 
 function generateMockData(count) {
