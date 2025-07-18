@@ -1,97 +1,83 @@
-/* style.css */
+/* style.css (配套最终版 script.js) */
 
-/* --- 全局和 Body 样式 --- */
 html, body {
     margin: 0;
     padding: 0;
     width: 100%;
-    height: 100%;
+    height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: #1a1a1a; /* 更深邃的背景色 */
+    background-color: #1a1a1a;
     color: #f0f0f0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden; /* 防止出现不必要的滚动条 */
+    overflow: hidden;
 }
 
-/* --- 头部容器样式 --- */
 .header-container {
-    padding: 1rem 1.5rem;
+    padding: 1rem;
     text-align: center;
     background-color: #2c2c2c;
     border-bottom: 1px solid #444;
-    flex-shrink: 0; /* 防止头部被压缩 */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
 }
 
 #heatmap-title {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.8rem;
 }
 
-/* --- 返回按钮样式 --- */
-#back-button {
-    position: absolute; /* 绝对定位到头部左侧 */
-    left: 1.5rem;
-    padding: 8px 16px;
-    font-size: 0.9rem;
-    cursor: pointer;
-    background-color: #007bff;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    transition: background-color 0.2s;
-}
-
-#back-button:hover {
-    background-color: #0056b3;
-}
-
-/* --- 主内容区域 --- */
 main {
-    flex-grow: 1; /* 让 main 区域填满剩余的垂直空间 */
-    display: flex;
-    flex-direction: column;
-    padding: 1rem;
-    box-sizing: border-box; /* 让 padding 不会撑大元素 */
-    min-height: 0; /* flexbox 布局中的一个重要技巧，防止子元素溢出 */
-}
-
-/* --- 热力图容器 --- */
-#heatmap-container {
     width: 100%;
-    flex-grow: 1; /* 核心：让热力图容器填满 main 区域的可用空间 */
-    border: 1px solid #444;
-    border-radius: 4px;
+    height: calc(100vh - 80px); /* 减去头部大致高度 */
+    padding: 1rem;
     box-sizing: border-box;
 }
 
-/* --- 行业按钮容器 --- */
-#sector-buttons {
-    padding: 1rem 0 0 0;
-    text-align: center;
-    flex-shrink: 0; /* 防止按钮区域被压缩 */
+#heatmap-container {
+    width: 100%;
+    height: 100%;
+}
+
+/* --- 核心：方块内文字样式 --- */
+.text-container {
+    width: 100%;
+    height: 100%;
     display: flex;
-    flex-wrap: wrap; /* 允许按钮换行 */
+    flex-direction: column;
     justify-content: center;
-    gap: 10px; /* 按钮之间的间距 */
+    align-items: center;
+    padding: 4px;
+    box-sizing: border-box;
+    text-align: center;
+    color: white;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+    overflow: hidden;
 }
 
-#sector-buttons button {
-    padding: 10px 15px;
-    cursor: pointer;
-    border: 1px solid #555;
-    background-color: #3a3a3a;
-    color: #f0f0f0;
-    border-radius: 5px;
-    font-size: 0.9rem;
-    transition: background-color 0.2s, border-color 0.2s;
+.ticker-text {
+    font-weight: bold;
+    font-size: 1.2em;
 }
 
-#sector-buttons button:hover {
-    background-color: #4a4a4a;
-    border-color: #777;
+.change-text {
+    font-size: 0.9em;
+    margin-top: 2px;
+}
+
+/* --- Tooltip 样式 --- */
+div.tooltip {
+    position: absolute;
+    text-align: left;
+    padding: 8px;
+    font: 12px sans-serif;
+    background: #f0f0f0;
+    color: #333;
+    border: 0px;
+    border-radius: 8px;
+    pointer-events: none;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+/* --- 行业标题样式 --- */
+text.sector-title {
+    font-weight: bold;
+    fill: #ccc;
+    font-size: 14px;
 }

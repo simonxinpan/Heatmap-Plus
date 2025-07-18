@@ -1,135 +1,135 @@
-// public/script.js (最终修正版)
+// public/script.js (目标导向的最终版本)
 
 document.addEventListener('DOMContentLoaded', () => {
-    fetchAndRenderHomepage();
+    fetchAndRenderData();
 });
 
-let allStocksData = [];
-let currentView = 'all'; // 'all' or a sector name
+let rootData; // 用来存储原始的层级数据
 
-function fetchAndRenderHomepage() {
-    console.log("Rendering Homepage...");
-    document.getElementById('heatmap-title').textContent = 'S&P 500 Heatmap';
-    document.getElementById('back-button').style.display = 'none';
+function fetchAndRenderData() {
     fetch('/api/stocks')
         .then(response => response.json())
         .then(data => {
             console.log(`Successfully fetched ${data.length} stocks.`);
-            
-            // ===================================================================
-            // ==================== [核心修复在这里] ===========================
-            // 强制将市值和涨跌幅转换为数字类型，并处理可能存在的无效数据
-            // ===================================================================
-            allStocksData = data.map(stock => ({
-                ...stock,
-                market_cap: +stock.market_cap || 0, // 使用 + 号快速转换为数字
-                change_percentage: +stock.change_percentage || 0,
-            }));
-            
-            // 诊断日志：看看转换后的第一条数据是什么样
-            if (allStocksData.length > 0) {
-                console.log("DIAGNOSTIC: First stock data after type conversion:", allStocksData[0]);
-            }
 
-            renderTreemap(allStocksData);
-            setupSectorButtons(allStocksData);
+            const cleanData = data
+                .map(stock => ({
+                    ...stock,
+                    market_cap: +stock.market_cap || 0,
+                    change_percentage: +stock.change_percentage || 0,
+                }))
+                .filter(stock => stock.market_cap > 0);
+
+            // === 核心：构建三级层级数据 ===
+            // 根 (root) -> 行业 (sector) -> 股票 (ticker)
+            const groupedData = d3.group(cleanData, d => d.sector);
+            
+            rootData = {
+                name: "S&P 500",
+                children: Array.from(groupedData, ([key, value]) => ({
+                    name: key,
+                    children: value
+                }))
+            };
+
+            renderTreemap(rootData, "S&P 500 Heatmap");
         })
-        .catch(error => console.error('Error fetching stock data:', error));
+        .catch(error => console.error('Error fetching data:', error));
 }
 
-function setupSectorButtons(data) {
-    const sectors = [...new Set(data.map(d => d.sector))];
-    const container = document.getElementById('sector-buttons');
-    container.innerHTML = '';
-    sectors.forEach(sector => {
-        const button = document.createElement('button');
-        button.textContent = sector;
-        button.onclick = () => renderSectorView(sector);
-        container.appendChild(button);
-    });
-}
 
-function renderSectorView(sector) {
-    currentView = sector;
-    document.getElementById('heatmap-title').textContent = `${sector} Sector`;
-    document.getElementById('back-button').style.display = 'inline-block';
-    const sectorData = allStocksData.filter(d => d.sector === sector);
-    renderTreemap(sectorData);
-}
-
-document.getElementById('back-button').addEventListener('click', () => {
-    currentView = 'all';
-    fetchAndRenderHomepage();
-});
-
-
-function renderTreemap(data) {
-    console.log("DIAGNOSTIC: Step F - renderTreemap function has started.");
+function renderTreemap(data, title) {
     const container = d3.select("#heatmap-container");
-    container.selectAll("*").remove(); // 清空旧图
+    container.selectAll("*").remove();
 
     const width = container.node().getBoundingClientRect().width;
     const height = container.node().getBoundingClientRect().height;
-    
-    if (width <= 0 || height <= 0 || !data || data.length === 0) {
-        console.warn("DIAGNOSTIC: Invalid dimensions or no data. Aborting render.");
-        return;
-    }
-    console.log(`DIAGNOSTIC: Step G - Container size is valid (${width}x${height}). Starting D3 operations...`);
 
+    const hierarchy = d3.hierarchy(data)
+        .sum(d => d.market_cap) // 告诉 d3 如何计算每个节点的“值”
+        .sort((a, b) => b.value - a.value); // 按市值排序
 
-    const root = d3.hierarchy({ children: data })
-        .sum(d => d.market_cap)
-        .sort((a, b) => b.value - a.value);
-
-    const treemap = d3.treemap()
+    const treemapLayout = d3.treemap()
         .size([width, height])
-        .padding(2);
+        .paddingTop(28) // 为行业标题留出空间
+        .paddingRight(7)
+        .paddingInner(3);
 
-    treemap(root);
+    treemapLayout(hierarchy);
 
     const colorScale = d3.scaleLinear()
         .domain([-3, 0, 3])
-        .range(["#e63946", "#f1f1f1", "#2a9d8f"])
+        .range(["#e63946", "#4a4a4a", "#2a9d8f"]) // 红-深灰-绿
         .clamp(true);
 
-    const cell = container.selectAll("g")
-        .data(root.leaves())
-        .enter().append("g")
-        .attr("transform", d => `translate(${d.x0},${d.y0})`);
+    // === 创建 Tooltip ===
+    const tooltip = d3.select("body").append("div")
+        .attr("class", "tooltip")
+        .style("opacity", 0);
 
-    cell.append("rect")
-        .attr("id", d => `rect-${d.data.ticker}`)
+    // === 创建节点 ===
+    const nodes = container.selectAll("g")
+        .data(hierarchy.leaves()) // 只选择最底层的叶子节点（股票）
+        .enter().append("g")
+        .attr("transform", d => `translate(${d.x0},${d.y0})`)
+        .on("mouseover", function(event, d) {
+            d3.select(this).select("rect").style("stroke", "white");
+            tooltip.transition().duration(200).style("opacity", .9);
+            tooltip.html(
+                `<strong>${d.data.ticker}</strong> (${d.data.company})<br/>` +
+                `Sector: ${d.data.sector}<br/>` +
+                `Market Cap: ${(d.data.market_cap / 1e6).toFixed(2)}B USD<br/>` +
+                `Change: <span style="color:${colorScale(d.data.change_percentage)}; font-weight:bold;">${d.data.change_percentage.toFixed(2)}%</span>`
+            )
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseout", function(d) {
+            d3.select(this).select("rect").style("stroke", "#1a1a1a");
+            tooltip.transition().duration(500).style("opacity", 0);
+        });
+
+    // === 绘制矩形 ===
+    nodes.append("rect")
         .attr("width", d => d.x1 - d.x0)
         .attr("height", d => d.y1 - d.y0)
         .attr("fill", d => colorScale(d.data.change_percentage))
-        .style("stroke", "#333");
+        .style("stroke", "#1a1a1a")
+        .style("stroke-width", "2px");
 
-    cell.append("text")
-        .attr("x", 5)
-        .attr("y", 20)
-        .text(d => d.data.ticker)
-        .attr("font-size", "14px")
-        .attr("fill", "white")
-        .style("pointer-events", "none");
+    // === 使用 foreignObject 实现灵活的文字布局 ===
+    const foreignObjects = nodes.append("foreignObject")
+        .attr("width", d => d.x1 - d.x0)
+        .attr("height", d => d.y1 - d.y0)
+        .style("pointer-events", "none") // 让鼠标事件穿透
+        .append("xhtml:div")
+        .attr("class", "text-container");
+    
+    foreignObjects.append("div")
+        .attr("class", "ticker-text")
+        .text(d => d.data.ticker);
 
-    cell.append("text")
-        .attr("x", 5)
-        .attr("y", 38)
-        .text(d => `${d.data.change_percentage.toFixed(2)}%`)
-        .attr("font-size", "12px")
-        .attr("fill", "white")
-        .style("pointer-events", "none");
+    foreignObjects.append("div")
+        .attr("class", "change-text")
+        .text(d => `${d.data.change_percentage.toFixed(2)}%`);
         
-    console.log("DIAGNOSTIC: Step H - renderTreemap function finished successfully.");
+    // === 绘制行业标题 ===
+    const sectorNodes = hierarchy.children; // 获取所有行业的节点
+    container.selectAll("text.sector-title")
+        .data(sectorNodes)
+        .enter()
+        .append("text")
+        .attr("class", "sector-title")
+        .attr("x", d => d.x0 + 5)
+        .attr("y", d => d.y0 + 20)
+        .text(d => d.data.name) // 行业中文名
+        .attr("font-size", "14px")
+        .attr("fill", "#ccc");
+
+    // === 更新主标题 ===
+    document.getElementById('heatmap-title').textContent = title;
 }
 
-// 确保在窗口大小改变时重新渲染
-window.addEventListener('resize', () => {
-    if (currentView === 'all') {
-        renderTreemap(allStocksData);
-    } else {
-        const sectorData = allStocksData.filter(d => d.sector === currentView);
-        renderTreemap(sectorData);
-    }
-});
+// 注意：这个新版本中，我们不再需要行业按钮和返回按钮的复杂逻辑，
+// 因为D3的层级布局已经原生支持了行业分组。
+// 如果需要点击进入某个行业，需要更复杂的Zoomable Treemap逻辑，可以作为下一步优化。
